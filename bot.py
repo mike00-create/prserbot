@@ -268,59 +268,125 @@ class ParserBot:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка текстовых сообщений"""
-        user_id = update.effective_user.id
-        
-        if user_id not in self.config.ALLOWED_USERS:
-            await update.message.reply_text("⛔ Доступ запрещен")
-            return
-        
-        text = update.message.text
-        session = self.user_sessions.get(user_id)
-        
-        if not session:
-            await update.message.reply_text(
-                "Используйте кнопки для управления ботом"
-            )
-            return
-        
-        if session['action'] == 'add_chat':
-            # Добавление чата
+    """Обработка текстовых сообщений"""
+    user_id = update.effective_user.id
+    
+    if user_id not in self.config.ALLOWED_USERS:
+        await update.message.reply_text("⛔ Доступ запрещен")
+        return
+    
+    text = update.message.text
+    session = self.user_sessions.get(user_id)
+    
+    if not session:
+        await update.message.reply_text(
+            "Используйте кнопки для управления ботом"
+        )
+        return
+    
+    if session['action'] == 'add_chat':
+        # Добавление чата
+        try:
+            # Проверяем чат через временный клиент
+            # Создаем экземпляр парсера без использования async with
+            parser = TelegramParser(self.config, self.db)
+            
+            # Берем первый активный аккаунт
+            accounts = self.config.get_enabled_accounts()
+            if not accounts:
+                await update.message.reply_text(
+                    "❌ Нет активных аккаунтов для парсинга.\n"
+                    "Проверьте настройки ACCOUNT_* в переменных окружения."
+                )
+                return
+            
+            # Инициализируем клиент
+            client = await parser.init_client(accounts[0])
+            if not client:
+                await update.message.reply_text(
+                    "❌ Не удалось подключиться к Telegram API.\n"
+                    "Проверьте API_ID, API_HASH и номер телефона."
+                )
+                return
+            
+            # Пробуем получить чат
             try:
-                # Пробуем получить чат для проверки
-                async with TelegramParser(self.config, self.db) as parser:
-                    # Создаем временный клиент для проверки
-                    temp_client = await parser.init_client(self.config.ACCOUNTS[0])
-                    if temp_client:
-                        entity = await temp_client.get_entity(text)
-                        chat_name = getattr(entity, 'title', text)
-                        await temp_client.disconnect()
-                        
-                        # Сохраняем в базу
-                        await self.db.add_chat(
-                            identifier=text,
-                            name=chat_name,
-                            keywords=['срочно', 'важно'],  # По умолчанию
-                            limit=50
-                        )
-                        
-                        await update.message.reply_text(
-                            f"✅ Чат '{chat_name}' успешно добавлен!\n"
-                            f"Ключевые слова по умолчанию: срочно, важно\n"
-                            f"Используйте кнопку 'Мои чаты' для настройки"
-                        )
-                    else:
-                        await update.message.reply_text(
-                            "❌ Не удалось подключиться к аккаунту.\n"
-                            "Проверьте настройки в .env"
-                        )
+                entity = await client.get_entity(text)
+                chat_name = getattr(entity, 'title', text)
+                
+                # Сохраняем в базу
+                await self.db.add_chat(
+                    identifier=text,
+                    name=chat_name,
+                    keywords=['срочно', 'важно'],  # По умолчанию
+                    limit=50
+                )
+                
+                await update.message.reply_text(
+                    f"✅ Чат '{chat_name}' успешно добавлен!\n"
+                    f"📝 Ключевые слова по умолчанию: срочно, важно\n"
+                    f"✏️ Используйте кнопку 'Мои чаты' для настройки\n"
+                    f"▶️ Нажмите 'Запустить парсинг' для поиска сообщений"
+                )
+                
+            except ValueError as e:
+                await update.message.reply_text(
+                    f"❌ Чат не найден: {str(e)}\n"
+                    "Проверьте правильность ссылки или username.\n"
+                    "Примеры:\n"
+                    "• @durov\n"
+                    "• https://t.me/durov\n"
+                    "• -1001234567890"
+                )
             except Exception as e:
                 await update.message.reply_text(
                     f"❌ Ошибка: {str(e)}\n"
-                    "Проверьте правильность ссылки или username"
+                    "Проверьте правильность ссылки или username."
                 )
+            finally:
+                # Закрываем клиент
+                await client.disconnect()
+                
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении чата: {e}")
+            await update.message.reply_text(
+                f"❌ Критическая ошибка: {str(e)}\n"
+                "Пожалуйста, проверьте логи Railway."
+            )
+        
+        # Удаляем сессию пользователя
+        del self.user_sessions[user_id]
+        
+    elif session['action'] == 'set_keywords':
+        # Установка ключевых слов
+        chat_id = session['chat_id']
+        keywords = [kw.strip() for kw in text.split(',') if kw.strip()]
+        
+        if not keywords:
+            await update.message.reply_text("❌ Введите хотя бы одно ключевое слово")
+            return
+        
+        # Обновляем чат
+        chats = await self.db.get_chats(enabled_only=False)
+        chat = next((c for c in chats if c['id'] == chat_id), None)
+        
+        if chat:
+            await self.db.add_chat(
+                identifier=chat['identifier'],
+                name=chat['name'],
+                keywords=keywords,
+                limit=chat['limit']
+            )
             
-            del self.user_sessions[user_id]
+            await update.message.reply_text(
+                f"✅ Ключевые слова обновлены:\n"
+                f"📝 {', '.join(keywords)}\n\n"
+                f"▶️ Нажмите 'Запустить парсинг' для поиска новых сообщений"
+            )
+        else:
+            await update.message.reply_text("❌ Чат не найден")
+        
+        del self.user_sessions[user_id]
             
         elif session['action'] == 'set_keywords':
             # Установка ключевых слов
