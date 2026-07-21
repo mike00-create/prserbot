@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Set, Optional
 
@@ -13,7 +14,6 @@ from telethon.errors import (
     AccessTokenInvalidError
 )
 from telethon.tl.types import Message
-from telethon.tl.functions.messages import GetMessagesRequest
 
 from database import Database
 from config import Config
@@ -52,65 +52,66 @@ class TelegramParser:
             logger.error(f"Ошибка сохранения processed_ids: {e}")
     
     async def init_client(self, account: Dict) -> Optional[TelegramClient]:
-        async def init_client(self, account: Dict) -> Optional[TelegramClient]:
-    """Инициализация клиента с подробным логированием"""
-    
-    # ===== ДИАГНОСТИКА =====
-    logger.info(f"🔍 ПРОВЕРКА АККАУНТА: {account.get('name')}")
-    logger.info(f"  API_ID: {account.get('api_id')}")
-    logger.info(f"  PHONE: {account.get('phone')}")
-    logger.info(f"  API_HASH: {account.get('api_hash')[:10]}...")
-    # ===== КОНЕЦ ДИАГНОСТИКИ =====
-    
-    try:
-        # ... остальной код ...
-        """Инициализация клиента с обработкой ошибок"""
+        """Инициализация клиента с подробным логированием"""
         try:
+            # Проверяем наличие обязательных полей
+            required_fields = ['name', 'api_id', 'api_hash', 'phone']
+            missing_fields = [f for f in required_fields if f not in account]
+            if missing_fields:
+                logger.error(f"❌ В аккаунте отсутствуют поля: {missing_fields}")
+                return None
+            
+            # Создаем папку для сессий, если её нет
+            os.makedirs("sessions", exist_ok=True)
+            
+            session_path = f"sessions/{account['name']}"
+            logger.info(f"📁 Создаю сессию: {session_path}")
+            logger.info(f"📱 Номер: {account['phone']}")
+            logger.info(f"🔑 API_ID: {account['api_id']}")
+            
             client = TelegramClient(
-                f"sessions/{account['name']}",
+                session_path,
                 account['api_id'],
                 account['api_hash']
             )
             
-            await client.start(phone=account['phone'])
-            logger.info(f"✅ Аккаунт '{account['name']}' авторизован")
-            return client
+            # Пробуем авторизоваться
+            logger.info(f"🔄 Пытаюсь авторизоваться...")
             
-        except SessionPasswordNeededError:
-            logger.error(f"❌ Для аккаунта '{account['name']}' требуется 2FA пароль")
-            return None
-            
-        except PhoneNumberInvalidError:
-            logger.error(f"❌ Неверный номер телефона для аккаунта '{account['name']}'")
-            return None
-            
-        except ApiIdInvalidError:
-            logger.error(f"❌ Неверный API_ID или API_HASH для аккаунта '{account['name']}'")
-            return None
-            
-        except AccessTokenInvalidError:
-            logger.error(f"❌ Неверный токен доступа для аккаунта '{account['name']}'")
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка авторизации {account['name']}: {e}")
-            return None
-    
-    async def get_entity_with_retry(self, client: TelegramClient, identifier: str, max_retries: int = 3):
-        """Получение чата с повторными попытками"""
-        for attempt in range(max_retries):
             try:
-                return await client.get_entity(identifier)
-            except FloodWaitError as e:
-                wait_time = e.seconds + 5
-                logger.warning(f"Flood wait {wait_time} секунд, попытка {attempt + 1}/{max_retries}")
-                await asyncio.sleep(wait_time)
+                await client.start(phone=account['phone'])
+                logger.info(f"✅ Аккаунт '{account['name']}' авторизован")
+                
+                # Проверяем, что авторизация прошла успешно
+                me = await client.get_me()
+                logger.info(f"👤 Авторизован как: {me.first_name} (@{me.username})")
+                
+                return client
+                
+            except SessionPasswordNeededError:
+                logger.error(f"❌ Для аккаунта '{account['name']}' требуется 2FA пароль")
+                logger.error("🔐 Добавьте поддержку 2FA в коде или используйте аккаунт без 2FA")
+                return None
+                
+            except PhoneNumberInvalidError:
+                logger.error(f"❌ Неверный номер телефона: {account['phone']}")
+                logger.error("📱 Проверьте формат: +79123456789 (с кодом страны)")
+                return None
+                
+            except ApiIdInvalidError:
+                logger.error(f"❌ Неверный API_ID или API_HASH")
+                logger.error("🔑 Проверьте настройки на my.telegram.org")
+                return None
+                
             except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                logger.warning(f"Ошибка получения чата {identifier}, попытка {attempt + 1}: {e}")
-                await asyncio.sleep(2 ** attempt)  # Экспоненциальная задержка
-        return None
+                logger.error(f"❌ Ошибка авторизации: {type(e).__name__}: {e}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Критическая ошибка при инициализации клиента: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
     
     async def process_message(self, client: TelegramClient, message: Message,
                              chat_config: Dict, chat_name: str, account_name: str):
@@ -120,28 +121,23 @@ class TelegramParser:
             if message.id in self.processed_ids:
                 return None
             
-            # Проверяем наличие текста
-            if not message.text:
-                return None
-                
-            # Обрезаем слишком длинные сообщения для проверки
-            text_for_check = message.text[:1000].lower()
-            if len(message.text) < self.config.MIN_TEXT_LENGTH:
+            if not message.text or len(message.text) < self.config.MIN_TEXT_LENGTH:
                 return None
             
             # Проверяем ключевые слова
+            text_lower = message.text.lower()
             matched_keywords = [
                 kw for kw in chat_config.get('keywords', [])
-                if kw.lower() in text_for_check
+                if kw.lower() in text_lower
             ]
             
             if not matched_keywords:
                 return None
             
-            # Проверяем дату (используем время сообщения)
+            # Проверяем дату
             if self.config.CHECK_INTERVAL_HOURS > 0:
-                time_limit = datetime.now().astimezone() - timedelta(hours=self.config.CHECK_INTERVAL_HOURS)
-                if message.date < time_limit:
+                time_limit = datetime.now() - timedelta(hours=self.config.CHECK_INTERVAL_HOURS)
+                if message.date.replace(tzinfo=None) < time_limit:
                     return None
             
             # Получаем отправителя
@@ -153,8 +149,6 @@ class TelegramParser:
                         sender_name += f' {message.sender.last_name}'
                 elif hasattr(message.sender, 'username') and message.sender.username:
                     sender_name = f'@{message.sender.username}'
-                elif hasattr(message.sender, 'title'):
-                    sender_name = message.sender.title
             
             # Генерируем URL
             try:
@@ -185,43 +179,26 @@ class TelegramParser:
             
             # Отмечаем как обработанное
             self.processed_ids.add(message.id)
+            self.save_processed_ids()
             
-            # Сохраняем каждые 10 сообщений
-            if len(self.processed_ids) % 10 == 0:
-                self.save_processed_ids()
-            
-            logger.info(f"✅ Найдено в {chat_name}: {message.text[:100].replace(chr(10), ' ')}...")
+            logger.info(f"✅ Найдено сообщение в {chat_name}: {message.text[:100]}...")
             
             return message_data
             
         except Exception as e:
-            logger.error(f"Ошибка обработки сообщения {message.id}: {e}")
+            logger.error(f"Ошибка обработки: {e}")
             return None
     
     async def parse_chat(self, client: TelegramClient, account: Dict, chat_config: Dict):
         """Парсинг одного чата"""
         try:
-            # Получаем чат с повторными попытками
-            entity = await self.get_entity_with_retry(client, chat_config['identifier'])
-            if not entity:
-                logger.error(f"Не удалось получить чат {chat_config['identifier']}")
-                return []
-            
+            entity = await client.get_entity(chat_config['identifier'])
             chat_name = getattr(entity, 'title', chat_config['identifier'])
-            logger.info(f"📥 Парсим {chat_name} (лимит: {chat_config.get('limit', 50)})")
+            
+            logger.info(f"📥 Парсим {chat_name}")
             
             messages_found = []
-            count = 0
-            
-            async for message in client.iter_messages(
-                entity, 
-                limit=chat_config.get('limit', 50),
-                reverse=False  # Новые сообщения сначала
-            ):
-                count += 1
-                if count % 20 == 0:
-                    logger.info(f"   Обработано {count} сообщений в {chat_name}")
-                
+            async for message in client.iter_messages(entity, limit=chat_config.get('limit', 50)):
                 result = await self.process_message(
                     client, message, chat_config, chat_name, account['name']
                 )
@@ -230,22 +207,18 @@ class TelegramParser:
                     
                     # Если достигнут лимит, останавливаемся
                     if len(messages_found) >= self.config.MAX_FORWARD_PER_RUN:
-                        logger.info(f"   Достигнут лимит ({self.config.MAX_FORWARD_PER_RUN})")
                         break
                 
-                # Небольшая пауза между сообщениями
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.5)
             
-            logger.info(f"📊 В {chat_name} найдено {len(messages_found)} сообщений")
             return messages_found
             
         except FloodWaitError as e:
-            wait_time = e.seconds + 10
-            logger.warning(f"⚠️ Flood wait {wait_time} секунд для {chat_config['identifier']}")
-            await asyncio.sleep(wait_time)
+            logger.warning(f"Flood wait {e.seconds} секунд")
+            await asyncio.sleep(e.seconds)
             return []
         except Exception as e:
-            logger.error(f"❌ Ошибка парсинга {chat_config['identifier']}: {e}")
+            logger.error(f"Ошибка парсинга {chat_config['identifier']}: {e}")
             return []
     
     async def run_parser(self, accounts: List[Dict] = None, chat_ids: List[int] = None):
@@ -297,10 +270,6 @@ class TelegramParser:
                     try:
                         found = await self.parse_chat(client, account, chat)
                         total_found += len(found)
-                        
-                        # Сохраняем ID после каждого чата
-                        self.save_processed_ids()
-                        
                     except Exception as e:
                         error_msg = f"Ошибка в чате {chat['identifier']}: {e}"
                         logger.error(error_msg)
@@ -319,7 +288,6 @@ class TelegramParser:
         # Финальное сохранение
         self.save_processed_ids()
         
-        # Логируем результат
         logger.info(f"✅ Парсинг завершен. Найдено: {total_found}")
         if errors:
             logger.warning(f"⚠️ Ошибки: {len(errors)}")
