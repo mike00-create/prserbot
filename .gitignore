@@ -1,0 +1,51 @@
+# Данные и файлы БД
+data/
+*.db
+*.sqlite
+*.db-journal
+*.log
+*.csv
+*.json
+!data/.gitkeep
+
+# Сессии Telegram (ВАЖНО: не загружать в Git!)
+sessions/
+*.session
+*.session-journal
+*.session.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+venv/
+env/
+.venv/
+.eggs/
+
+# Переменные окружения
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Логи
+*.log
+
+# Railway
+railway.json
