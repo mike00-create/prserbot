@@ -52,6 +52,18 @@ class TelegramParser:
             logger.error(f"Ошибка сохранения processed_ids: {e}")
     
     async def init_client(self, account: Dict) -> Optional[TelegramClient]:
+        async def init_client(self, account: Dict) -> Optional[TelegramClient]:
+    """Инициализация клиента с подробным логированием"""
+    
+    # ===== ДИАГНОСТИКА =====
+    logger.info(f"🔍 ПРОВЕРКА АККАУНТА: {account.get('name')}")
+    logger.info(f"  API_ID: {account.get('api_id')}")
+    logger.info(f"  PHONE: {account.get('phone')}")
+    logger.info(f"  API_HASH: {account.get('api_hash')[:10]}...")
+    # ===== КОНЕЦ ДИАГНОСТИКИ =====
+    
+    try:
+        # ... остальной код ...
         """Инициализация клиента с обработкой ошибок"""
         try:
             client = TelegramClient(
