@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Загружаем .env только в локальной среде
@@ -9,11 +10,11 @@ class Config:
     # ============ Telegram Bot ============
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN не найден в переменных окружения!")
+        raise ValueError("❌ BOT_TOKEN не найден в переменных окружения!")
     
-    ALLOWED_USERS = [int(x) for x in os.getenv('ALLOWED_USERS', '').split(',') if x]
+    ALLOWED_USERS = [int(x.strip()) for x in os.getenv('ALLOWED_USERS', '').split(',') if x.strip()]
     if not ALLOWED_USERS:
-        raise ValueError("ALLOWED_USERS не найден в переменных окружения!")
+        raise ValueError("❌ ALLOWED_USERS не найден в переменных окружения!")
     
     # ============ Аккаунты для парсинга ============
     ACCOUNTS = []
@@ -45,7 +46,7 @@ class Config:
         i += 1
     
     if not ACCOUNTS:
-        raise ValueError("Не загружено ни одного аккаунта для парсинга!")
+        raise ValueError("❌ Не загружено ни одного аккаунта для парсинга!")
     
     # ============ Настройки парсинга ============
     DEFAULT_LIMIT = int(os.getenv('DEFAULT_LIMIT', 50))
@@ -55,12 +56,16 @@ class Config:
     
     # ============ Пути к файлам (с поддержкой Railway Volumes) ============
     # Определяем базовую директорию для данных
-    # На Railway Volume монтируется в /app/data
     DATA_DIR = os.getenv('DATA_DIR', 'data')
     
-    # Создаем директорию, если её нет
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR, exist_ok=True)
+    # ✅ СОЗДАЕМ ПАПКУ ГАРАНТИРОВАННО
+    try:
+        Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
+        print(f"✅ Папка данных: {DATA_DIR}")
+    except Exception as e:
+        print(f"⚠️ Ошибка создания папки {DATA_DIR}: {e}")
+        # Запасной вариант - используем текущую папку
+        DATA_DIR = '.'
     
     # Пути к файлам в директории данных
     PROCESSED_IDS_FILE = os.path.join(DATA_DIR, os.getenv('PROCESSED_IDS_FILE', 'processed_ids.json'))
@@ -68,7 +73,6 @@ class Config:
     LOG_FILE = os.path.join(DATA_DIR, os.getenv('LOG_FILE', 'parser.log'))
     
     # ============ База данных ============
-    # Если используется SQLite, файл будет в DATA_DIR
     DATABASE_FILE = os.path.join(DATA_DIR, os.getenv('DATABASE_FILE', 'parser_data.db'))
     
     # Если используется PostgreSQL (на Railway), берем DATABASE_URL
@@ -81,7 +85,6 @@ class Config:
         print(f"✅ Используется SQLite: {DATABASE_FILE}")
     
     # ============ Дополнительные настройки ============
-    # Режим отладки
     DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
     
     # Прокси (если нужно)
@@ -111,18 +114,46 @@ class Config:
     def is_railway_env(cls) -> bool:
         """Проверить, запущено ли на Railway"""
         return bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_SERVICE_ID'))
+    
+    @classmethod
+    def validate_accounts(cls):
+        """Проверка корректности данных аккаунтов"""
+        if not cls.ACCOUNTS:
+            print("❌ Нет загруженных аккаунтов!")
+            return False
+        
+        for i, acc in enumerate(cls.ACCOUNTS, 1):
+            issues = []
+            
+            if not acc.get('name'):
+                issues.append("отсутствует имя")
+            if not acc.get('api_id'):
+                issues.append("отсутствует API_ID")
+            if not acc.get('api_hash'):
+                issues.append("отсутствует API_HASH")
+            if not acc.get('phone'):
+                issues.append("отсутствует номер телефона")
+                
+            if issues:
+                print(f"❌ Аккаунт {i} имеет проблемы: {', '.join(issues)}")
+                return False
+            else:
+                print(f"✅ Аккаунт {i} ({acc['name']}): данные заполнены")
+        
+        return True
 
-# При инициализации выводим информацию о конфигурации
-if __name__ == "__main__":
-    print("="*50)
-    print("🔧 КОНФИГУРАЦИЯ ПАРСЕРА")
-    print("="*50)
-    print(f"📱 Аккаунтов загружено: {len(Config.ACCOUNTS)}")
-    for acc in Config.ACCOUNTS:
-        status = "🟢" if acc['enabled'] else "🔴"
-        print(f"   {status} {acc['name']} ({acc['phone']})")
-    print(f"\n📂 Директория данных: {Config.DATA_DIR}")
-    print(f"📊 База данных: {'PostgreSQL' if Config.USE_POSTGRES else 'SQLite'}")
-    print(f"📝 Лог-файл: {Config.LOG_FILE}")
-    print(f"🔄 Режим отладки: {'Включен' if Config.DEBUG else 'Выключен'}")
-    print("="*50)
+# ✅ При импорте выводим информацию
+print("="*50)
+print("🔧 КОНФИГУРАЦИЯ ПАРСЕРА")
+print("="*50)
+print(f"🤖 BOT_TOKEN: {'✅ Установлен' if Config.BOT_TOKEN else '❌ ОТСУТСТВУЕТ'}")
+print(f"👤 ALLOWED_USERS: {Config.ALLOWED_USERS}")
+print(f"📱 Аккаунтов: {len(Config.ACCOUNTS)}")
+for acc in Config.ACCOUNTS:
+    status = "🟢" if acc['enabled'] else "🔴"
+    print(f"   {status} {acc['name']} ({acc['phone']})")
+print(f"📂 DATA_DIR: {Config.DATA_DIR}")
+print(f"📊 БД: {'PostgreSQL' if Config.USE_POSTGRES else 'SQLite'}")
+print(f"📝 Лог: {Config.LOG_FILE}")
+print(f"📁 Файл БД: {Config.DATABASE_FILE}")
+print("="*50)
