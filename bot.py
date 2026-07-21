@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List
 
@@ -22,21 +23,23 @@ logger = logging.getLogger(__name__)
 
 class ParserBot:
     def __init__(self):
-    # ===== ДИАГНОСТИКА =====
-    print("\n🔍 ПРОВЕРКА КОНФИГА В BOT.PY")
-    print(f"ACCOUNTS: {len(Config.ACCOUNTS)}")
-    if Config.ACCOUNTS:
-        print(f"Первый аккаунт: {Config.ACCOUNTS[0].get('name')}")
-        print(f"API_ID: {Config.ACCOUNTS[0].get('api_id')}")
-        print(f"PHONE: {Config.ACCOUNTS[0].get('phone')}")
-    # ===== КОНЕЦ ДИАГНОСТИКИ =====
-    
-    self.config = Config()
-    self.db = Database(self.config.DATABASE_FILE)
-    self.parser = TelegramParser(self.config, self.db)
-    self.user_sessions = {}
-    def __init__(self):
+        # ===== ДИАГНОСТИКА =====
+        print("\n🔍 ПРОВЕРКА КОНФИГА В BOT.PY")
+        
+        # Создаем папки
+        os.makedirs("data", exist_ok=True)
+        os.makedirs("sessions", exist_ok=True)
+        
         self.config = Config()
+        
+        print(f"ACCOUNTS: {len(self.config.ACCOUNTS)}")
+        if self.config.ACCOUNTS:
+            print(f"Первый аккаунт: {self.config.ACCOUNTS[0].get('name')}")
+            print(f"API_ID: {self.config.ACCOUNTS[0].get('api_id')}")
+            print(f"PHONE: {self.config.ACCOUNTS[0].get('phone')}")
+        print("="*50)
+        # ===== КОНЕЦ ДИАГНОСТИКИ =====
+        
         self.db = Database(self.config.DATABASE_FILE)
         self.parser = TelegramParser(self.config, self.db)
         self.user_sessions = {}  # Временные данные пользователей
