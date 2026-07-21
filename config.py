@@ -1,35 +1,29 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-# ===== ДИАГНОСТИКА =====
-print("🔍 ДИАГНОСТИКА ЗАГРУЗКИ КОНФИГА")
-print(f"Текущая директория: {os.getcwd()}")
-print(f"Файлы в директории: {os.listdir('.')}")
 
-# Проверяем переменные до загрузки .env
-print("\n📋 ПЕРЕМЕННЫЕ ДО ЗАГРУЗКИ .env:")
-for key in ['ACCOUNT_1_NAME', 'ACCOUNT_1_API_ID', 'ACCOUNT_1_PHONE']:
-    val = os.getenv(key)
-    print(f"  {key} = {val if val else '❌ НЕ НАЙДЕНА'}")
-
-# Загружаем .env
-if os.path.exists('.env'):
-    print("\n✅ .env файл найден, загружаем...")
-    load_dotenv()
-else:
-    print("\n⚠️ .env файл НЕ НАЙДЕН (для Railway это нормально)")
-
-# Проверяем переменные после загрузки
-print("\n📋 ПЕРЕМЕННЫЕ ПОСЛЕ ЗАГРУЗКИ:")
-for key in ['ACCOUNT_1_NAME', 'ACCOUNT_1_API_ID', 'ACCOUNT_1_PHONE']:
-    val = os.getenv(key)
-    print(f"  {key} = {val if val else '❌ НЕ НАЙДЕНА'}")
-# ===== КОНЕЦ ДИАГНОСТИКИ =====
-
-# ... остальной код Config ..
 # Загружаем .env только в локальной среде
 if os.path.exists('.env'):
     load_dotenv()
+
+# ===== ДИАГНОСТИКА =====
+print("\n" + "="*50)
+print("🔍 ДИАГНОСТИКА ЗАГРУЗКИ КОНФИГА")
+print(f"Текущая директория: {os.getcwd()}")
+
+# Проверяем переменные окружения
+print("\n📋 ПРОВЕРКА ПЕРЕМЕННЫХ:")
+for key in ['BOT_TOKEN', 'ALLOWED_USERS', 'ACCOUNT_1_NAME', 'ACCOUNT_1_API_ID', 'ACCOUNT_1_PHONE']:
+    val = os.getenv(key)
+    if val:
+        if 'HASH' in key or 'TOKEN' in key:
+            print(f"  ✅ {key} = {val[:10]}... (скрыто)")
+        else:
+            print(f"  ✅ {key} = {val}")
+    else:
+        print(f"  ❌ {key} = НЕ НАЙДЕНА")
+print("="*50 + "\n")
+# ===== КОНЕЦ ДИАГНОСТИКИ =====
 
 class Config:
     # ============ Telegram Bot ============
@@ -79,33 +73,29 @@ class Config:
     CHECK_INTERVAL_HOURS = int(os.getenv('CHECK_INTERVAL_HOURS', 24))
     MIN_TEXT_LENGTH = int(os.getenv('MIN_TEXT_LENGTH', 5))
     
-    # ============ Пути к файлам (с поддержкой Railway Volumes) ============
-    # Определяем базовую директорию для данных
+    # ============ Пути к файлам ============
     DATA_DIR = os.getenv('DATA_DIR', 'data')
     
-    # ✅ СОЗДАЕМ ПАПКУ ГАРАНТИРОВАННО
+    # Создаем папку
     try:
         Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
         print(f"✅ Папка данных: {DATA_DIR}")
     except Exception as e:
         print(f"⚠️ Ошибка создания папки {DATA_DIR}: {e}")
-        # Запасной вариант - используем текущую папку
         DATA_DIR = '.'
     
-    # Пути к файлам в директории данных
+    # Пути к файлам
     PROCESSED_IDS_FILE = os.path.join(DATA_DIR, os.getenv('PROCESSED_IDS_FILE', 'processed_ids.json'))
     CSV_FILE = os.path.join(DATA_DIR, os.getenv('CSV_FILE', 'parsed_messages.csv'))
     LOG_FILE = os.path.join(DATA_DIR, os.getenv('LOG_FILE', 'parser.log'))
-    
-    # ============ База данных ============
     DATABASE_FILE = os.path.join(DATA_DIR, os.getenv('DATABASE_FILE', 'parser_data.db'))
     
-    # Если используется PostgreSQL (на Railway), берем DATABASE_URL
+    # ============ PostgreSQL ============
     DATABASE_URL = os.getenv('DATABASE_URL')
     USE_POSTGRES = bool(DATABASE_URL)
     
     if USE_POSTGRES:
-        print(f"✅ Используется PostgreSQL: {DATABASE_URL[:30]}...")
+        print(f"✅ Используется PostgreSQL")
     else:
         print(f"✅ Используется SQLite: {DATABASE_FILE}")
     
@@ -121,10 +111,9 @@ class Config:
             'port': int(os.getenv('PROXY_PORT', 1080))
         }
     
-    # ============ Методы для удобства ============
+    # ============ Методы ============
     @classmethod
     def get_account(cls, name: str):
-        """Получить аккаунт по имени"""
         for account in cls.ACCOUNTS:
             if account['name'] == name:
                 return account
@@ -132,24 +121,20 @@ class Config:
     
     @classmethod
     def get_enabled_accounts(cls):
-        """Получить список включенных аккаунтов"""
         return [acc for acc in cls.ACCOUNTS if acc.get('enabled', True)]
     
     @classmethod
     def is_railway_env(cls) -> bool:
-        """Проверить, запущено ли на Railway"""
         return bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_SERVICE_ID'))
     
     @classmethod
     def validate_accounts(cls):
-        """Проверка корректности данных аккаунтов"""
         if not cls.ACCOUNTS:
             print("❌ Нет загруженных аккаунтов!")
             return False
         
         for i, acc in enumerate(cls.ACCOUNTS, 1):
             issues = []
-            
             if not acc.get('name'):
                 issues.append("отсутствует имя")
             if not acc.get('api_id'):
@@ -167,11 +152,11 @@ class Config:
         
         return True
 
-# ✅ При импорте выводим информацию
+# Выводим информацию
 print("="*50)
 print("🔧 КОНФИГУРАЦИЯ ПАРСЕРА")
 print("="*50)
-print(f"🤖 BOT_TOKEN: {'✅ Установлен' if Config.BOT_TOKEN else '❌ ОТСУТСТВУЕТ'}")
+print(f"🤖 BOT_TOKEN: {'✅' if Config.BOT_TOKEN else '❌'}")
 print(f"👤 ALLOWED_USERS: {Config.ALLOWED_USERS}")
 print(f"📱 Аккаунтов: {len(Config.ACCOUNTS)}")
 for acc in Config.ACCOUNTS:
@@ -179,6 +164,4 @@ for acc in Config.ACCOUNTS:
     print(f"   {status} {acc['name']} ({acc['phone']})")
 print(f"📂 DATA_DIR: {Config.DATA_DIR}")
 print(f"📊 БД: {'PostgreSQL' if Config.USE_POSTGRES else 'SQLite'}")
-print(f"📝 Лог: {Config.LOG_FILE}")
-print(f"📁 Файл БД: {Config.DATABASE_FILE}")
 print("="*50)
