@@ -7,7 +7,6 @@
   "deploy": {
     "startCommand": "python bot.py",
     "restartPolicyType": "ON_FAILURE",
-    "numReplicas": 1,
-    "restartPolicyMaxRetries": 3
+    "numReplicas": 1
   }
 }
