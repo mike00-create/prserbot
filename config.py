@@ -1,7 +1,32 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+# ===== ДИАГНОСТИКА =====
+print("🔍 ДИАГНОСТИКА ЗАГРУЗКИ КОНФИГА")
+print(f"Текущая директория: {os.getcwd()}")
+print(f"Файлы в директории: {os.listdir('.')}")
 
+# Проверяем переменные до загрузки .env
+print("\n📋 ПЕРЕМЕННЫЕ ДО ЗАГРУЗКИ .env:")
+for key in ['ACCOUNT_1_NAME', 'ACCOUNT_1_API_ID', 'ACCOUNT_1_PHONE']:
+    val = os.getenv(key)
+    print(f"  {key} = {val if val else '❌ НЕ НАЙДЕНА'}")
+
+# Загружаем .env
+if os.path.exists('.env'):
+    print("\n✅ .env файл найден, загружаем...")
+    load_dotenv()
+else:
+    print("\n⚠️ .env файл НЕ НАЙДЕН (для Railway это нормально)")
+
+# Проверяем переменные после загрузки
+print("\n📋 ПЕРЕМЕННЫЕ ПОСЛЕ ЗАГРУЗКИ:")
+for key in ['ACCOUNT_1_NAME', 'ACCOUNT_1_API_ID', 'ACCOUNT_1_PHONE']:
+    val = os.getenv(key)
+    print(f"  {key} = {val if val else '❌ НЕ НАЙДЕНА'}")
+# ===== КОНЕЦ ДИАГНОСТИКИ =====
+
+# ... остальной код Config ..
 # Загружаем .env только в локальной среде
 if os.path.exists('.env'):
     load_dotenv()
